@@ -1,0 +1,103 @@
+{% extends "base.html" %} {% block title %}Register · Flask Auth Lite{% endblock
+%} {% block content %}
+<section class="mx-auto max-w-md">
+  <div class="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+    <h1 class="text-2xl font-semibold">Create your account</h1>
+    <p class="mt-1 text-slate-400 text-sm">
+      Choose a username, add your email, and set a strong password.
+    </p>
+
+    {% if errors %}
+    <div class="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-sm p-4">
+        
+        <p class="font-semibold mb-2">Please fix the following:</p>
+        
+        <ul class="space-y-1">
+            {% for e in errors %}
+                <li>• {{ e }}</li>
+            {% endfor %}
+        </ul>
+    
+    </div>
+    {% endif %}
+
+
+
+
+    <form class="mt-6 space-y-4" method="post" action="/register" novalidate>
+      <div>
+        <label for="username" class="block text-sm text-slate-400 mb-1"
+          >Username</label
+        >
+        <input
+          id="username"
+          name="username"
+          type="text"
+          required
+          minlength="3"
+          maxlength="80"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand"
+          placeholder="Aditya_tayal"
+        />
+      </div>
+
+      <div>
+        <label for="email" class="block text-sm text-slate-400 mb-1"
+          >Email</label
+        >
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          maxlength="120"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand"
+          placeholder="you@example.com"
+        />
+      </div>
+
+      <div>
+        <label for="password" class="block text-sm text-slate-400 mb-1"
+          >Password</label
+        >
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minlength="6"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand"
+          placeholder="••••••••"
+        />
+      </div>
+
+      <div>
+        <label for="confirm_password" class="block text-sm text-slate-400 mb-1"
+          >Confirm password</label
+        >
+        <input
+          id="confirm_password"
+          name="confirm_password"
+          type="password"
+          required
+          minlength="6"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand"
+          placeholder="••••••••"
+        />
+      </div>
+
+      <button
+        type="submit"
+        class="w-full mt-2 rounded-lg bg-brand/20 text-brand hover:bg-brand/30 px-4 py-2"
+      >
+        Create account
+      </button>
+    </form>
+
+    <p class="mt-4 text-sm text-slate-400">
+      Already have an account?
+      <a href="/login" class="text-brand hover:underline">Sign in</a>.
+    </p>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %} {% block title %}Dashboard · Flask Auth Lite{%
+endblock %} {% block content %}
+<section class="mx-auto max-w-4xl">
+  <div class="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold">Welcome {{current_user.username}} to Your Dashboard</h1>
+      <a
+        href="{{url_for('change_password')}}"
+        class="rounded-lg bg-slate-800 px-3 py-1.5 text-slate-300 hover:bg-slate-700 text-sm"
+      >
+        change password
+      </a>
+
+
+      <a
+        href="{{url_for('logout')}}"
+        class="rounded-lg bg-rose-500/20 px-3 py-1.5 text-rose-300 hover:bg-rose-500/30 text-sm"
+      >
+        Logout
+      </a>
+    </div>
+
+    <p class="mt-2 text-slate-400 text-sm">
+      This page is protected. Only logged-in users can view it.
+    </p>
+
+    <div class="mt-6 grid gap-4 md:grid-cols-2">
+      <div class="rounded-xl border border-slate-800 p-4">
+        <div class="text-slate-400 text-sm mb-2">Overview</div>
+        <div class="text-slate-100">No data yet — add widgets later.</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 p-4">
+        <div class="text-slate-400 text-sm mb-2">Recent Activity</div>
+        <div class="text-slate-100">Nothing here yet.</div>
+      </div>
+    </div>
+
+    <div
+      class="mt-6 rounded-xl border border-slate-800 p-4 text-xs text-slate-500"
+    >
+      Tip: Try opening this URL in a private window — you’ll be redirected to
+      the login page.
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+
+
+
+
+You might be wondering, “Why am I only showing you this small snippet instead of the whole function?”
+
+Well, that’s just how I teach. Believe it or not, I want you to pause, think, and learn something from each lecture, even from a single line of code like this.
+
+This little line is powerful—it checks if the email is in a valid format using a regular expression. We’ll break it down together so you not only see the code but also understand what it’s doing.
+
+Take care, my awesome student — and don’t forget:
+👉 Subscribe
+👍 Smash that like button (it really motivates me!)
