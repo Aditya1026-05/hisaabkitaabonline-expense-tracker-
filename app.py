@@ -1,79 +1,60 @@
-from flask import Flask, render_template, url_for, request, redirect, flash, make_response, Response
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, url_for, request, redirect, flash, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
-from sqlalchemy import text
 import re
-from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 from urllib.parse import urlparse
-from datetime import timedelta, date, date as dt_date, datetime
-from sqlalchemy import func
+from datetime import timedelta, date, datetime
 
-db = SQLAlchemy()
+# 🔥 MongoDB
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+
+client = MongoClient("mongodb+srv://adityatayal2610_db_user:test1234@cluster0.mzztzam.mongodb.net/hisaabkitaab?retryWrites=true&w=majority")
+mongo_db = client["hisaabkitaab"]
+
+users_collection = mongo_db["users"]
+expenses_collection = mongo_db["expenses"]
+
 login_manager = LoginManager()
 
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-
-    expenses = db.relationship('Expenses', backref='user', lazy=True)
-
-    def __repr__(self):
-        return f"<User {self.username}>"
-
-
-class Expenses(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    description = db.Column(db.String(120), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(50), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
+# 👤 USER CLASS
+class User(UserMixin):
+    def __init__(self, user):
+        self.id = str(user["_id"])
+        self.username = user["username"]
+        self.email = user["email"]
+        self.password_hash = user["password_hash"]
 
 def create_app():
     app = Flask(__name__)
 
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = 'my-secret-key'
     app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=15)
 
-
-    db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "login"
-
     login_manager.login_message = "Please login first"
     login_manager.login_message_category = "error"
 
-    @app.route("/health/db")
-    def health_db():
-        try:
-            db.session.execute(text("SELECT 1"))
-            return {"db": "ok"}, 200
+    # 🔄 Load user
+    @login_manager.user_loader
+    def load_user(user_id):
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        return User(user) if user else None
 
-        except Exception as e:
-            return {"db": "error", "detail": str(e)}, 500
-
-    with app.app_context():
-        db.create_all()
-
-
-
+    # 🔒 Safe redirect (same as original)
     def is_safe_local_path(target: str) -> bool:
         if not target:
             return False
         parts = urlparse(target)
-        return parts.scheme == "" and parts.netloc== "" and target.startswith("/")
+        return parts.scheme == "" and parts.netloc == "" and target.startswith("/")
 
+    # 🏠 Home
     @app.route("/")
     def index():
         return render_template("index.html")
 
+    # 📊 Dashboard (same logic as original)
     @app.route("/dashboard")
     @login_required
     def dashboard():
@@ -86,56 +67,62 @@ def create_app():
             if not s:
                 return None
             try:
-                return datetime.strptime(s, "%Y-%m-%d").date()
+                return datetime.strptime(s, "%Y-%m-%d")
             except:
                 return None
 
         start_date = parse_date_or_none(start_str)
         end_date = parse_date_or_none(end_str)
 
-        q = Expenses.query.filter_by(user_id=current_user.id)
+        # 🔥 Date validation (NEW)
+        if start_date is not None and end_date is not None:
+            if start_date > end_date:
+                flash("Start date cannot be after end date", "error")
+                return redirect(url_for("dashboard"))
+
+        query = {"user_id": current_user.id}
 
         if start_date:
-            q = q.filter(Expenses.date >= start_date)
+            query["date"] = {"$gte": start_date}
         if end_date:
-            q = q.filter(Expenses.date <= end_date)
+            query.setdefault("date", {})
+            query["date"]["$lte"] = end_date
         if selected_category:
-            q = q.filter(Expenses.category == selected_category)
+            query["category"] = selected_category
 
-        expenses = q.order_by(Expenses.date.desc(), Expenses.id.desc()).all()
-        total = round(sum(e.amount for e in expenses), 2)
+        data = list(expenses_collection.find(query).sort("date", -1))
 
-        # 🔥 Category chart
-        cat_q = db.session.query(Expenses.category, func.sum(Expenses.amount)).filter_by(user_id=current_user.id)
+        # 🔥 make Mongo behave like SQL (IMPORTANT)
+        for e in data:
+            e["id"] = str(e["_id"])
 
-        if start_date:
-            cat_q = cat_q.filter(Expenses.date >= start_date)
-        if end_date:
-            cat_q = cat_q.filter(Expenses.date <= end_date)
-        if selected_category:
-            cat_q = cat_q.filter(Expenses.category == selected_category)
+        total = round(sum(e["amount"] for e in data), 2)
 
-        cat_rows = cat_q.group_by(Expenses.category).all()
-        cat_labels = [c for c, _ in cat_rows]
-        cat_values = [round(float(s or 0), 2) for _, s in cat_rows]
+        # 📊 Category chart (same logic)
+        cat_data = list(expenses_collection.aggregate([
+            {"$match": query},
+            {"$group": {"_id": "$category", "total": {"$sum": "$amount"}}}
+        ]))
 
-        # 🔥 Day chart
-        day_q = db.session.query(Expenses.date, func.sum(Expenses.amount)).filter_by(user_id=current_user.id)
+        cat_labels = [c["_id"] for c in cat_data]
+        cat_values = [round(c["total"], 2) for c in cat_data]
 
-        if start_date:
-            day_q = day_q.filter(Expenses.date >= start_date)
-        if end_date:
-            day_q = day_q.filter(Expenses.date <= end_date)
-        if selected_category:
-            day_q = day_q.filter(Expenses.category == selected_category)
+        # 📊 Day chart (same logic)
+        day_data = list(expenses_collection.aggregate([
+            {"$match": query},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$date"}},
+                "total": {"$sum": "$amount"}
+            }},
+            {"$sort": {"_id": 1}}
+        ]))
 
-        day_rows = day_q.group_by(Expenses.date).order_by(Expenses.date).all()
-        day_labels = [d.isoformat() for d, _ in day_rows]
-        day_values = [round(float(s or 0), 2) for _, s in day_rows]
+        day_labels = [d["_id"] for d in day_data]
+        day_values = [round(d["total"], 2) for d in day_data]
 
         return render_template(
             "expense_dashboard.html",
-            expenses=expenses,
+            expenses=data,
             total=total,
             categories=['Food','transport','Health','Utilities','Rent'],
             today=date.today().isoformat(),
@@ -148,8 +135,7 @@ def create_app():
             day_values=day_values
         )
 
-
-
+    # 📝 Register (same logic)
     @app.route("/register", methods=["GET", "POST"])
     def register():
         errors = []
@@ -172,31 +158,27 @@ def create_app():
             if password != confirm:
                 errors.append("Passwords don't match!")
 
+            if users_collection.find_one({"email": email}):
+                errors.append("that username or email is already registered.")
+
             if not errors:
-                try:
-                    pw_hash = generate_password_hash(password)
-                    user = User(username=username, email=email, password_hash=pw_hash)
-                    db.session.add(user)
-                    db.session.commit()
+                pw_hash = generate_password_hash(password)
 
-                    flash("Account created Successfully!, Please login", "success")
+                users_collection.insert_one({
+                    "username": username,
+                    "email": email,
+                    "password_hash": pw_hash
+                })
 
-                    return redirect(url_for('login'))
-                
-                except IntegrityError:
-                    db.session.rollback()
-                    errors.append("that username or email is already registered. ")
+                flash("Account created Successfully!, Please login", "success")
+                return redirect(url_for('login'))
 
-            # return f"Received data - {email}"
+        return render_template("register.html", errors=errors)
 
-        return render_template("register.html",errors = errors)
-
-
-
+    # 🔐 Login (same logic)
     @app.route("/login", methods=["GET","POST"])
     def login():
-
-        errors= []
+        errors = []
 
         if request.method == "POST":
             email = (request.form.get("email") or "").strip()
@@ -209,72 +191,31 @@ def create_app():
                 errors.append("Password is required")
 
             if not errors:
-                user = User.query.filter_by(email=email).first()
+                user = users_collection.find_one({"email": email})
 
-                if not user or not check_password_hash(user.password_hash, password):
+                if not user or not check_password_hash(user["password_hash"], password):
                     errors.append("Invalid Email or Password.")
-
                 else:
                     remember_flag = request.form.get("remember") == "1"
-                    login_user(user, remember=remember_flag)
-                    flash(f"Welcome Back {user.username}", "success")
-
-                    # urlparse("https://example/com/page")
-                    
+                    login_user(User(user), remember=remember_flag)
+                    flash(f"Welcome Back {user['username']}", "success")
 
                     next_url = request.form.get("next") or request.args.get("next") or ""
                     if is_safe_local_path(next_url):
                         return redirect(next_url)
 
-
                     return redirect(url_for("dashboard"))
 
         return render_template("login.html", errors=errors)
 
-
+    # 🚪 Logout
     @app.route("/logout")
     def logout():
         logout_user()
         flash("You have been logged out", "success")
         return redirect(url_for("index"))
 
-    @app.route("/change-password", methods=["GET", "POST"])
-    def change_password():
-        errors = []
-        if request.method =="POST":
-           current_pw = request.form.get("current_password") or ""
-           new_pw = request.form.get("new_password") or ""
-           confirm_pw = request.form.get("confirm_password") or ""
-
-
-           if not check_password_hash(current_user.password_hash, current_pw):
-              errors.append("Current password is incorrect")
-           
-           if len(new_pw)<6:
-              errors.append("New Password needs to be atleast 6 characters")
-
-           if new_pw != confirm_pw:
-              errors.append("New Password and confirmation do not match!")
-           
-           if not errors:
-            current_user.password_hash = generate_password_hash(new_pw)
-            db.session.commit()
-
-            flash("Password has been updated!", "success")
-            return redirect(url_for("dashboard"))
-        
-
-        
-
-
-        return render_template("change_password.html", errors=errors)
-
-    
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        return User.query.get(int(user_id))
-
+    # ➕ Add
     @app.route("/add", methods=["POST"])
     @login_required
     def add():
@@ -289,51 +230,61 @@ def create_app():
 
         try:
             amount = float(amount)
-            d = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else date.today()
+            d = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
 
-            e = Expenses(
-                description=description,
-                amount=amount,
-                category=category,
-                date=d,
-                user_id=current_user.id   # 🔥 VERY IMPORTANT
-            )
-
-            db.session.add(e)
-            db.session.commit()
+            expenses_collection.insert_one({
+                "description": description,
+                "amount": amount,
+                "category": category,
+                "date": d,
+                "user_id": current_user.id
+            })
 
             flash("Expense added successfully", "success")
 
-        except Exception as e:
+        except:
             flash("Error adding expense", "error")
 
         return redirect(url_for("dashboard"))
 
-    @app.route("/edit/<int:expense_id>", methods=["GET", "POST"])
+    # ✏️ Edit (id used everywhere)
+    @app.route("/edit/<id>", methods=["GET", "POST"])
     @login_required
-    def edit(expense_id):
-        expenses = Expenses.query.get_or_404(expense_id)
+    def edit(id):
 
-        # 🔥 security check (VERY IMPORTANT)
-        if expenses.user_id != current_user.id:
+        exp = expenses_collection.find_one({"_id": ObjectId(id)})
+
+        if exp["user_id"] != current_user.id:
             flash("Unauthorized access", "error")
             return redirect(url_for("dashboard"))
 
         if request.method == "POST":
-            expenses.description = request.form.get("description")
-            expenses.amount = float(request.form.get("amount"))
-            expenses.category = request.form.get("category")
+            exp_update = {
+                "description": request.form.get("description"),
+                "amount": float(request.form.get("amount")),
+                "category": request.form.get("category")
+            }
+
             date_str = request.form.get("date")
-
             if date_str:
-                expenses.date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                exp_update["date"] = datetime.strptime(date_str, "%Y-%m-%d")
 
-            db.session.commit()
+            expenses_collection.update_one(
+                {"_id": ObjectId(id)},
+                {"$set": exp_update}
+            )
+
             flash("Expense updated successfully", "success")
             return redirect(url_for("dashboard"))
 
-        return render_template("edit.html", expenses=expenses, categories=['Food','transport','Health','Utilities','Rent'],
-    today=dt_date.today().isoformat())
+        exp["id"] = str(exp["_id"])
+
+        return render_template(
+            "edit.html",
+            expenses=exp,
+            categories=['Food','transport','Health','Utilities','Rent'],
+            today=date.today().isoformat()
+        )
 
     @app.route("/export")
     @login_required
@@ -342,53 +293,82 @@ def create_app():
         end = request.args.get("end")
         category = request.args.get("category")
 
-        q = Expenses.query.filter_by(user_id=current_user.id)
+        query = {"user_id": current_user.id}
 
         if start:
-            q = q.filter(Expenses.date >= start)
+            query["date"] = {"$gte": datetime.strptime(start, "%Y-%m-%d")}
         if end:
-            q = q.filter(Expenses.date <= end)
+            query.setdefault("date", {})
+            query["date"]["$lte"] = datetime.strptime(end, "%Y-%m-%d")
         if category:
-            q = q.filter(Expenses.category == category)
+            query["category"] = category
 
-        expenses = q.all()
+        data = list(expenses_collection.find(query))
 
         def generate():
             yield "Description,Amount,Category,Date\n"
-            for e in expenses:
-                yield f"{e.description},{e.amount},{e.category},{e.date}\n"
+            for e in data:
+                yield f"{e['description']},{e['amount']},{e['category']},{e['date']}\n"
 
         return Response(
-        generate(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=expenses.csv"},
-        )
+            generate(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment;filename=expenses.csv"},
+        )  
 
-    @app.route("/delete/<int:expense_id>", methods=["POST"])
+    # ❌ Delete
+    @app.route("/delete/<id>", methods=["POST"])
     @login_required
-    def delete(expense_id):
-        expenses = Expenses.query.get_or_404(expense_id)
+    def delete(id):
 
-        # 🔥 VERY IMPORTANT: user isolation
-        if expenses.user_id != current_user.id:
+        exp = expenses_collection.find_one({"_id": ObjectId(id)})
+
+        if exp["user_id"] != current_user.id:
             flash("Unauthorized access", "error")
             return redirect(url_for("dashboard"))
 
-        try:
-            db.session.delete(expenses)
-            db.session.commit()
-            flash("Expense deleted successfully", "success")
+        expenses_collection.delete_one({"_id": ObjectId(id)})
 
-        except Exception as e:
-            db.session.rollback()
-            flash("Error deleting expense", "error")
-
+        flash("Expense deleted successfully", "success")
         return redirect(url_for("dashboard"))
-        
+
+    # 🔑 Change Password
+    @app.route("/change-password", methods=["GET", "POST"])
+    @login_required
+    def change_password():
+        errors = []
+
+        if request.method =="POST":
+            current_pw = request.form.get("current_password") or ""
+            new_pw = request.form.get("new_password") or ""
+            confirm_pw = request.form.get("confirm_password") or ""
+
+            user = users_collection.find_one({"_id": ObjectId(current_user.id)})
+
+            if not check_password_hash(user["password_hash"], current_pw):
+                errors.append("Current password is incorrect")
+
+            if len(new_pw) < 6:
+                errors.append("New Password needs to be atleast 6 characters")
+
+            if new_pw != confirm_pw:
+                errors.append("New Password and confirmation do not match!")
+
+            if not errors:
+                users_collection.update_one(
+                    {"_id": ObjectId(current_user.id)},
+                    {"$set": {"password_hash": generate_password_hash(new_pw)}}
+                )
+
+                flash("Password has been updated!", "success")
+                return redirect(url_for("dashboard"))
+
+        return render_template("change_password.html", errors=errors)
+
     return app
 
 
+app = create_app()
 
 if __name__ == "__main__":
-    app = create_app()
     app.run(debug=True, port=5555)

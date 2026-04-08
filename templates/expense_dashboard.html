@@ -196,14 +196,14 @@
                 
                 
                 
-                href="{{url_for('edit', expense_id=e.id)}}">EDIT</a>
+                href="{{url_for('edit', id=e.id)}}">EDIT</a>
 
               
 
 
               <form 
               method="post" 
-              action="{{url_for('delete', expense_id=e.id)}}"
+              action="{{url_for('delete', id=e.id)}}"
               onsubmit="return confirm('Are you sure you want to delete?')"
               >
               <button 
