@@ -9,7 +9,7 @@ from datetime import timedelta, date, datetime
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 
-client = MongoClient("mongodb+srv://adityatayal2610_db_user:test1234@cluster0.mzztzam.mongodb.net/hisaabkitaab?retryWrites=true&w=majority")
+client = MongoClient(os.environ.get("MONGO_URI"))
 mongo_db = client["hisaabkitaab"]
 
 users_collection = mongo_db["users"]
@@ -371,4 +371,4 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5555)
+    app.run()
